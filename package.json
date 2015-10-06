@@ -1,10 +1,10 @@
 {
-  "name": "BBlocks.js",
+  "name": "BBlocksNext.js",
   "version": "0.0.2",
-  "description": "",
+  "description": "BBlocks.js with FRP",
   "main": "index.js",
   "scripts": {
-    "compile": "env NODE_ENV=production webpack --config webpack-prod.config.babel.js --progress",
+    "compile": "set NODE_ENV=production && webpack --config webpack-prod.config.babel.js --progress",
     "lint": "eslint .",
     "start": "webpack-dev-server --config webpack-dev.config.babel.js --progress",
     "test": "npm run lint"
