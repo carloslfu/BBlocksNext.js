@@ -1,8 +1,8 @@
 /** @jsx svgJSX */
-import {Rx} from 'rx'
+import Rx from 'rx'
 import {svg, h} from '@cycle/dom'
 import _ from 'lodash'
-import {mouseToSvg} from '../../helpers/utils.js'
+import draggable from '../../gestures/draggable.js'
 
 function svgJSX(tag, attrs, ...children) {
   return svg(tag, attrs, children)
@@ -24,95 +24,47 @@ export default function workspace(responses) {
       rx: 5,
       ry: 5,
       main: false,
+      x: 0,
+      y: 0,
       ...props
     }
   })
 
-// touch and mouse gestures ------------------------------------ TODO: isolate this
-  let draggable = (element$, position$) => {
-    let targetId = ev => ev.target.attributes.id.value
-    let down$ = element$.events('mousedown').map(
-      ev => mouseToSvg(ev, ev.target.farthestViewportElement)
-    )
-    /*.merge(
-      element$.events('touchstart')  // TODO: wraper for touch events
-    )*/
-    let up$ = element$.events('mouseup').map(
-      ev => mouseToSvg(ev, ev.target.farthestViewportElement)
-    )
-    /*.merge(
-      element$.events('touchend')  // TODO: wraper for touch events
-    )*/
-    let move$ = element$.events('mousemove').map(
-      ev => mouseToSvg(ev, ev.target.farthestViewportElement)
-    )
-    /*.merge(
-      element$.events('touchmove')  // TODO: wraper for touch events
-    )*/
-
-    let relPosition$ = Rx.Observable.withLatestFrom(
-      position$,
-      down$,
-      (position, down) => ({
-        x: down.x - position.x,
-        y: down.y - position.y
-      })
-    ).startWith({})
-
-    let drag$ = move$.pausable(
-      down$.map(ev => true).merge(up$.map(ev => false))
-    ).map(ev => mouseToSvg(ev, ev.target.farthestViewportElement)).startWith({})
-
-    let dragRelative$ = Rx.Observable.combineLatest(
-      relPosition$,
-      drag$,
-      (relPosition, drag) => ({
-        x: drag.x - relPosition.x,
-        y: drag.y - relPosition.y,
-        relPosition,
-        drag,
-      })
-    )
-
-    down$.subscribe(ev => {
-      ev.preventDefault()
-      console.log(targetId(ev) + ' - down')
-    })
-
-    up$.subscribe(ev => {
-      ev.preventDefault()
-      console.log(targetId(ev) + ' - up')
-    })
-
-    /*move$.subscribe(ev => {
-      ev.preventDefault()
-      console.log(targetId(ev) + ' - move')
-    })*/
-    props$.subscribe(pos => {
-      console.log('pos: ' + pos)
-    })
-    relPosition$.subscribe(pos => {
-      console.log('rel: ' + pos)
-    })
-    dragRelative$.subscribe(x => {
-      console.log('drag: ' + x)
-    })
-    return down$.startWith({})// Relative$
-  }
-
-// ----------------------------------------
-
-  let vtree$ = props$
-  // event handling
-  .flatMap(props =>
-    Rx.Observable.combineLatest(
-      Rx.Observable.just(props),
-      draggable(responses.DOM.select(`#${props.id}-background`).startWith({}), { x: props.x, y: props.y }),
-      (props, pos) => ({...props, ...pos})
-    )
-  )
+  let vtree$ = /*Rx.Observable.combineLatest(
+    props$,
+    responses.DOM.select(`#nestedWorkspace1`).events('dragging').startWith({ detail: {x: 0, y: 0} }),
+    (props, drags) => {
+      console.log({ x: drags.detail.x, y: drags.detail.y })
+      if (props.children[0])
+        props.children[0].properties = { ...props.children[0].properties, ...{ x: drags.detail.x, y: drags.detail.y } }
+      return props
+    }
+  )*/
+  props$.flatMap(props => {
+    if (props.children.length > 0) {
+      return Rx.Observable.combineLatest(
+        Rx.Observable.just(props),
+        responses.DOM.select(`#${props.children[0].properties.id}`).events('dragging').startWith(
+          { 
+            detail: {
+              x: props.children[0].properties.x,
+              y: props.children[0].properties.y
+            }
+          }
+        ),
+        (props, drags) => {
+          //console.log({ x: drags.detail.x, y: drags.detail.y })
+          props.children[0].properties = { ...props.children[0].properties, ...{ x: drags.detail.x, y: drags.detail.y } }
+          return props
+        }
+      )
+    } else
+      return Rx.Observable.just(props)
+  })
   // rendering
   .map(props => {
+    //console.log(props)
+
     const svgPropsList = ['width', 'height']
     const svgProps = _.pick(props, (value, key) => (svgPropsList.indexOf(key) != -1))
     const containerPropsList = ['x', 'y']
@@ -123,6 +75,7 @@ export default function workspace(responses) {
     const nestedBackgroundPropsList = ['width', 'height', 'fill', 'stroke-opacity', 'stroke', 'stroke-width', 'rx', 'ry']
     const nestedBackgroundProps = _.pick(props, (value, key) => (nestedBackgroundPropsList.indexOf(key) != -1))
 
+    // container type (nested or main)
     if (props.main) {
       return (
         <svg id={props.id} attributes={svgProps}
@@ -143,9 +96,20 @@ export default function workspace(responses) {
       )
     }
   })
-  
+  // event handling
+  let dragging$ = props$.flatMap(props => {
+    console.log(props)
+    return Rx.Observable.combineLatest(
+      Rx.Observable.just(props),
+      draggable(responses.DOM.select(`#${props.id}-background`), props),
+      (props, pos) => ({...pos})
+    )
+  })//.publish().refCount()
   
   return {
     DOM: vtree$,
+    events: {
+      dragging: dragging$
+    }
   }
 }
